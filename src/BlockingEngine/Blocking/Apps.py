@@ -1,6 +1,8 @@
 
 
 
+# ruff: noqa: N999
+
 from django.apps import AppConfig
 
 

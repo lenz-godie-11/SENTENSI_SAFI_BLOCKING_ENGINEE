@@ -1,4 +1,6 @@
 
+# ruff: noqa: N999
+
 from BlockingEngine.Blocking.models import BlockingDecision
 
 

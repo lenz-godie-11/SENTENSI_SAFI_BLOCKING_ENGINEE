@@ -1,3 +1,5 @@
+# ruff: noqa: N999, I001
+
 from pathlib import Path
 
 
@@ -19,7 +21,10 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-    # Registers the Blocking Engine application and its Django configuration.
+
+
+    "graphene_django",
+    #Regiters the Blocking Engine application and its Django configuration.
     "BlockingEngine.Blocking.Apps.BlockingConfig",
 ]
 
@@ -95,3 +100,10 @@ STATIC_URL = "static/"
 
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+
+
+# Defines the GraphQL schema that graphene-django exposes through Django.
+GRAPHENE = {
+    "SCHEMA": "BlockingEngine.GraphQL.Schema.Schema",
+}

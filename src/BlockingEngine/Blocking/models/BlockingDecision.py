@@ -3,6 +3,8 @@
 
 
 
+# ruff: noqa: N999
+
 from django.db import models
 
 

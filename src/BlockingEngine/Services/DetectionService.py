@@ -1,5 +1,7 @@
 
 
+# ruff: noqa: N999
+
 
 class DetectionService:
     """

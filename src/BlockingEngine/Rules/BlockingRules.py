@@ -1,3 +1,6 @@
+# ruff: noqa: N999
+
+
 class BlockingRules:
     """
     Contains the business rules that convert a detection result

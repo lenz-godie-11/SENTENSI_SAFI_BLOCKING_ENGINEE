@@ -1,3 +1,5 @@
+# ruff: noqa: N999, I001
+
 import os
 
 from django.core.asgi import get_asgi_application
