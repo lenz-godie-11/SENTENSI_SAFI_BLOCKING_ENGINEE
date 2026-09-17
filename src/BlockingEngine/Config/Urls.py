@@ -10,9 +10,13 @@ from BlockingEngine.GraphQL.Schema import Schema
 urlpatterns = [
     path("admin/", admin.site.urls),
 
-    # Exposes the Blocking Engine GraphQL API to external clients.
+    # GraphQL is exposed through a single API boundary.
+    # CSRF protection remains enabled through Django middleware.
     path(
         "graphql/",
-        GraphQLView.as_view(graphiql=True, schema=Schema()),
+        GraphQLView.as_view(
+            graphiql=True,
+            schema=Schema(),
+        ),
     ),
 ]

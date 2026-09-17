@@ -1,16 +1,36 @@
 # ruff: noqa: N999, I001
 
+import os
 from pathlib import Path
+
+from dotenv import load_dotenv
 
 
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 
+# Load environment variables from the project root.
+load_dotenv(BASE_DIR / ".env")
 
-SECRET_KEY = "dev-secret-key-change-later"
 
-DEBUG = True
+SECRET_KEY = os.getenv(
+    "DJANGO_SECRET_KEY",
+    "unsafe-development-key",
+)
 
-ALLOWED_HOSTS = []
+DEBUG = os.getenv(
+    "DJANGO_DEBUG",
+    "False",
+).lower() == "true"
+
+
+ALLOWED_HOSTS = [
+    Host.strip()
+    for Host in os.getenv(
+        "DJANGO_ALLOWED_HOSTS",
+        "127.0.0.1,localhost",
+    ).split(",")
+    if Host.strip()
+]
 
 
 INSTALLED_APPS = [
@@ -21,12 +41,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
 
-
-
     "graphene_django",
-    #Regiters the Blocking Engine application and its Django configuration.
+
     "BlockingEngine.Blocking.Apps.BlockingConfig",
 ]
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -102,8 +121,56 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 
-
-# Defines the GraphQL schema that graphene-django exposes through Django.
+# Defines the GraphQL schema exposed through Graphene-Django.
 GRAPHENE = {
     "SCHEMA": "BlockingEngine.GraphQL.Schema.Schema",
+}
+
+
+# ---------------------------------------------------------------------------
+# Security hardening
+# ---------------------------------------------------------------------------
+
+# Prevent browsers from embedding application pages in frames.
+X_FRAME_OPTIONS = "DENY"
+
+# Prevent browsers from MIME-sniffing responses.
+SECURE_CONTENT_TYPE_NOSNIFF = True
+
+# Restrict the amount of referrer information sent by the browser.
+SECURE_REFERRER_POLICY = "same-origin"
+
+
+# ---------------------------------------------------------------------------
+# Application logging
+# ---------------------------------------------------------------------------
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+
+    "formatters": {
+        "BlockingEngine": {
+            "format": (
+                "{asctime} | {levelname} | "
+                "{name} | {message}"
+            ),
+            "style": "{",
+        },
+    },
+
+    "handlers": {
+        "Console": {
+            "class": "logging.StreamHandler",
+            "formatter": "BlockingEngine",
+        },
+    },
+
+    "loggers": {
+        "BlockingEngine": {
+            "handlers": ["Console"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
 }

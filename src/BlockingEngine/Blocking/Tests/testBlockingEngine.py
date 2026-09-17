@@ -3,15 +3,19 @@ from unittest.mock import patch
 from django.test import TestCase
 
 from BlockingEngine.Blocking.models import BlockingDecision
-from BlockingEngine.Core.Exceptions import InvalidContentError
+from BlockingEngine.Core.Exceptions import (
+    DetectionError,
+    InvalidContentError,
+)
 from BlockingEngine.Rules.BlockingRules import BlockingRules
 from BlockingEngine.Services.BlockingService import BlockingService
+from BlockingEngine.Services.DetectionService import DetectionService
 
 
 class BlockingRulesTest(TestCase):
     """
-    Tests the business rules that convert a detection result
-    into the final ALLOW or BLOCK action.
+    Tests the business rules responsible for converting
+    detection results into ALLOW or BLOCK decisions.
     """
 
     def test_safe_content_is_allowed(self):
@@ -19,7 +23,6 @@ class BlockingRulesTest(TestCase):
         Verify that a safe detection result produces an ALLOW decision.
         """
 
-        # Simulate a safe result that would normally come from the ML model.
         DetectionResult = {
             "label": "safe",
             "confidence": 0.97,
@@ -27,13 +30,8 @@ class BlockingRulesTest(TestCase):
 
         Decision = BlockingRules.Evaluate(DetectionResult)
 
-        # Safe content must be permitted.
         self.assertTrue(Decision["allowed"])
-
-        # The final action must be ALLOW.
         self.assertEqual(Decision["action"], "ALLOW")
-
-        # The decision must contain the standardized safe-content reason.
         self.assertEqual(
             Decision["reason"],
             "SAFE_CONTENT",
@@ -44,7 +42,6 @@ class BlockingRulesTest(TestCase):
         Verify that an offensive detection result produces a BLOCK decision.
         """
 
-        # Simulate an offensive result returned by the future ML model.
         DetectionResult = {
             "label": "offensive",
             "confidence": 0.94,
@@ -52,13 +49,8 @@ class BlockingRulesTest(TestCase):
 
         Decision = BlockingRules.Evaluate(DetectionResult)
 
-        # Offensive content must never be allowed.
         self.assertFalse(Decision["allowed"])
-
-        # The final action must be BLOCK.
         self.assertEqual(Decision["action"], "BLOCK")
-
-        # The decision must contain the standardized blocking reason.
         self.assertEqual(
             Decision["reason"],
             "OFFENSIVE_CONTENT",
@@ -69,8 +61,8 @@ class BlockingServiceTest(TestCase):
     """
     Tests the complete BlockingService workflow.
 
-    The real ML model is replaced with a controlled test result
-    so the Blocking Engine can be tested independently.
+    The real detection component is mocked so the Blocking Engine
+    can be tested independently from the future ML implementation.
     """
 
     @patch(
@@ -84,7 +76,6 @@ class BlockingServiceTest(TestCase):
         Verify that offensive content is blocked and persisted.
         """
 
-        # Simulate the result that will eventually come from the ML model.
         MockDetect.return_value = {
             "label": "offensive",
             "confidence": 0.94,
@@ -94,7 +85,6 @@ class BlockingServiceTest(TestCase):
             "This is offensive test content"
         )
 
-        # Verify the decision returned to the caller.
         self.assertFalse(Result["allowed"])
         self.assertEqual(Result["action"], "BLOCK")
         self.assertEqual(
@@ -102,7 +92,6 @@ class BlockingServiceTest(TestCase):
             "OFFENSIVE_CONTENT",
         )
 
-        # The decision should also be persisted in the database.
         self.assertEqual(
             BlockingDecision.objects.count(),
             1,
@@ -110,13 +99,11 @@ class BlockingServiceTest(TestCase):
 
         SavedDecision = BlockingDecision.objects.first()
 
-        # Verify the persisted action.
         self.assertEqual(
             SavedDecision.Action,
             "BLOCK",
         )
 
-        # Verify the persisted reason.
         self.assertEqual(
             SavedDecision.Reason,
             "OFFENSIVE_CONTENT",
@@ -124,14 +111,12 @@ class BlockingServiceTest(TestCase):
 
     def test_empty_content_is_rejected(self):
         """
-        Verify that an empty string is rejected before detection.
+        Verify that empty content is rejected before detection.
         """
 
-        # No content should reach the detection layer.
         with self.assertRaises(InvalidContentError):
             BlockingService().EvaluateContent("")
 
-        # Invalid input must not create a database decision.
         self.assertEqual(
             BlockingDecision.objects.count(),
             0,
@@ -139,15 +124,12 @@ class BlockingServiceTest(TestCase):
 
     def test_whitespace_content_is_rejected(self):
         """
-        Verify that content containing only whitespace is rejected.
+        Verify that whitespace-only content is rejected.
         """
 
-        # Whitespace has no meaningful content and should not be
-        # forwarded to the detection component.
         with self.assertRaises(InvalidContentError):
             BlockingService().EvaluateContent("   ")
 
-        # Invalid input must not create a database decision.
         self.assertEqual(
             BlockingDecision.objects.count(),
             0,
@@ -158,12 +140,125 @@ class BlockingServiceTest(TestCase):
         Verify that non-string input is rejected at the service boundary.
         """
 
-        # The Blocking Engine accepts textual content only.
         with self.assertRaises(InvalidContentError):
             BlockingService().EvaluateContent(None)
 
-        # Invalid input must not create a database decision.
         self.assertEqual(
             BlockingDecision.objects.count(),
             0,
         )
+
+
+class DetectionServiceTest(TestCase):
+    """
+    Tests the detection contract.
+
+    These tests ensure that malformed ML output cannot reach
+    the BlockingRules layer.
+    """
+
+    def test_valid_detection_result_is_accepted(self):
+        """
+        Verify that a valid detection result is accepted and normalized.
+        """
+
+        DetectionResult = {
+            "label": "safe",
+            "confidence": 0.95,
+        }
+
+        Result = DetectionService._ValidateResult(
+            DetectionResult
+        )
+
+        self.assertEqual(Result["label"], "safe")
+        self.assertEqual(Result["confidence"], 0.95)
+
+    def test_missing_detection_field_is_rejected(self):
+        """
+        Verify that incomplete detection output is rejected.
+        """
+
+        DetectionResult = {
+            "label": "safe",
+        }
+
+        with self.assertRaises(DetectionError):
+            DetectionService._ValidateResult(
+                DetectionResult
+            )
+
+    def test_unsupported_label_is_rejected(self):
+        """
+        Verify that unsupported detection labels are rejected.
+        """
+
+        DetectionResult = {
+            "label": "unknown",
+            "confidence": 0.95,
+        }
+
+        with self.assertRaises(DetectionError):
+            DetectionService._ValidateResult(
+                DetectionResult
+            )
+
+    def test_confidence_above_one_is_rejected(self):
+        """
+        Verify that confidence values above 1.0 are rejected.
+        """
+
+        DetectionResult = {
+            "label": "offensive",
+            "confidence": 1.5,
+        }
+
+        with self.assertRaises(DetectionError):
+            DetectionService._ValidateResult(
+                DetectionResult
+            )
+
+    def test_negative_confidence_is_rejected(self):
+        """
+        Verify that negative confidence values are rejected.
+        """
+
+        DetectionResult = {
+            "label": "safe",
+            "confidence": -0.1,
+        }
+
+        with self.assertRaises(DetectionError):
+            DetectionService._ValidateResult(
+                DetectionResult
+            )
+
+    def test_non_numeric_confidence_is_rejected(self):
+        """
+        Verify that non-numeric confidence values are rejected.
+        """
+
+        DetectionResult = {
+            "label": "safe",
+            "confidence": "high",
+        }
+
+        with self.assertRaises(DetectionError):
+            DetectionService._ValidateResult(
+                DetectionResult
+            )
+
+    def test_boolean_confidence_is_rejected(self):
+        """
+        Verify that boolean values cannot be used as confidence scores.
+        """
+
+        DetectionResult = {
+            "label": "safe",
+            "confidence": True,
+        }
+
+        with self.assertRaises(DetectionError):
+            DetectionService._ValidateResult(
+                DetectionResult
+            )
